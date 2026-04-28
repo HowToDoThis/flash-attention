@@ -216,6 +216,17 @@ def validate_and_update_archs(archs):
 cmdclass = {}
 ext_modules = []
 
+try:
+    import ninja  # noqa: F401
+except ImportError:
+    warnings.warn(
+        "The 'ninja' package is not installed. Without ninja, the FlashAttention CUDA extension "
+        "build will fall back to a single-threaded compile and can take a very long time. "
+        "Install ninja with: pip install ninja",
+        UserWarning,
+        stacklevel=1,
+    )
+
 # We want this even if SKIP_CUDA_BUILD because when we run python setup.py sdist we want the .hpp
 # files included in the source distribution, in case the user compiles from source.
 if IS_ROCM:
@@ -256,6 +267,7 @@ if not SKIP_CUDA_BUILD and not IS_ROCM:
     cc_flag = []
     if CUDA_HOME is not None:
         _, bare_metal_version = get_cuda_bare_metal_version(CUDA_HOME)
+        print(f"bare_metal_version: {bare_metal_version}\n")
         if bare_metal_version < Version("11.7"):
             raise RuntimeError(
                 "FlashAttention is only supported on CUDA 11.7 and above.  "
@@ -275,7 +287,7 @@ if not SKIP_CUDA_BUILD and not IS_ROCM:
 
     nvcc_flags = [
     "-O3",
-    "-std=c++17",
+    "-std=c++20",
     "-U__CUDA_NO_HALF_OPERATORS__",
     "-U__CUDA_NO_HALF_CONVERSIONS__",
     "-U__CUDA_NO_HALF2_OPERATORS__",
@@ -294,11 +306,21 @@ if not SKIP_CUDA_BUILD and not IS_ROCM:
     # "-DFLASHATTENTION_DISABLE_LOCAL",
     ]
 
-    compiler_c17_flag=["-O3", "-std=c++17"]
+    compiler_c17_flag=["-O3", "-std=c++20"]
     # Add Windows-specific flags
     if sys.platform == "win32" and os.getenv('DISTUTILS_USE_SDK') == '1':
         nvcc_flags.extend(["-Xcompiler", "/Zc:__cplusplus"])
-        compiler_c17_flag=["-O2", "/std:c++17", "/Zc:__cplusplus"]
+        compiler_c17_flag=["-O2", "/std:c++20", "/Zc:__cplusplus"]
+        # maximize runtime performance
+        nvcc_flags.extend(["-Xptxas", "-O3"])
+        nvcc_flags.extend(["-Xcompiler", "-Ofast"])
+        nvcc_flags.extend(["-ftz=true"])
+        nvcc_flags.extend(["-prec-div=false"])
+        # CUDA 13+ CCCL headers require MSVC's conforming preprocessor (see Dao-AILab/flash-attention#2395).
+        if bare_metal_version >= Version("13.0"):
+            print(f"bare_metal_version: {bare_metal_version} >= 13.0, adding new flags\n")
+            nvcc_flags.extend(["-Xcompiler", "/Zc:preprocessor"])
+            compiler_c17_flag = compiler_c17_flag + ["/Zc:preprocessor"]
 
     ext_modules.append(
         CUDAExtension(

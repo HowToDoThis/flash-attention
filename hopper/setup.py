@@ -616,6 +616,14 @@ if not SKIP_CUDA_BUILD:
                 "-Xcompiler=/Zc:__cplusplus",  # sets __cplusplus correctly, CUTLASS_CONSTEXPR_IF_CXX17 needed for cutlass::gcd
             ]
         )
+        nvcc_flags.extend(["-Xptxas", "-O3"])
+        nvcc_flags.extend(["-Xcompiler", "-Ofast"])
+        nvcc_flags.extend(["-ftz=true"])
+        nvcc_flags.extend(["-prec-div=false"])
+        if bare_metal_version >= Version("13.0"):
+            print(f"bare_metal_version: {bare_metal_version} >= 13.0, adding new flags\n")
+            nvcc_flags.extend(["-Xcompiler", "/Zc:preprocessor"])
+
     include_dirs = [
         Path(this_dir),
         cutlass_dir / "include",
